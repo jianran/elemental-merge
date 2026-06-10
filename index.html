@@ -156,6 +156,7 @@ canvas{display:block;width:100%;height:100%;}
     <button id="btn-fight">⚔️ Fight!</button>
     <button id="btn-speed" title="Toggle combat speed">⏩ 1x</button>
     <button id="btn-mute-small" title="Mute">🔊</button>
+    <button id="btn-help" title="How to play">❓</button>
     <button id="btn-restart" title="Restart game">🔄</button>
     <button id="btn-profile" title="Switch account" style="font-size:13px;">👤</button>
     <button id="btn-duel" title="Duel another player" style="font-size:13px;">⚔️</button>
@@ -208,7 +209,7 @@ canvas{display:block;width:100%;height:100%;}
     </div>
   </div>
   <div id="bottom-bar">
-    <span class="info-text" id="tooltip-text">🖱️ Drag from bench to grid • Drop same units to merge • Press FIGHT to battle!</span>
+    <span class="info-text" id="wave-preview-text"></span>
     <button id="btn-deathray" title="Kill one enemy (200g)">💀 Death Ray</button>
     <button id="btn-ultraray" title="Kill all enemies (1000g)">☠️ Ultra Ray</button>
     <button id="btn-potion">🧪 Use Potion</button>
@@ -1235,7 +1236,14 @@ function render(){
         ctx.shadowColor='rgba(255,255,255,.3)';ctx.shadowBlur=8;
         ctx.strokeRect(cx+2,cy+2,CS-4,CS-4);ctx.shadowBlur=0;
       }
-      const u=S.grid[r][c]; if(u)dUnit(u,cx+CS/2,cy+CS/2,CS*.7,false,t);
+      const u=S.grid[r][c]; if(u){
+        // Auto-highlight mergable units during prep
+        if(S.phase==='prep'&&!DS.drag){
+          const hasPartner=gridUnits().some(v=>v.id!==u.id&&canMerge(u,v));
+          if(hasPartner){ctx.strokeStyle='rgba(255,220,80,.4)';ctx.lineWidth=2;ctx.shadowColor='#ffdd44';ctx.shadowBlur=6;rr(cx+CS*.1,cy+CS*.1,CS*.8,CS*.8,4);ctx.stroke();ctx.shadowBlur=0;}
+        }
+        dUnit(u,cx+CS/2,cy+CS/2,CS*.7,false,t);
+      }
     }
   }
 
@@ -1477,7 +1485,7 @@ function dEnemy(e,x,y,sz){
 }
 
 // ─── DRAG & DROP ────────────────────────────────────────────
-const DS={drag:false,unit:null,src:null,sr:-1,sc:-1,sbi:-1,mx:0,my:0,hover:null};
+const DS={drag:false,unit:null,src:null,sr:-1,sc:-1,sbi:-1,mx:0,my:0,hover:null,startX:0,startY:0,clickedUnit:null};
 
 function canvPos(e){
   const r=canvas.getBoundingClientRect();
@@ -1556,8 +1564,21 @@ function startDrag(pos){
 }
 
 function endDrag(pos){
-  if(!DS.drag){return;}
+  if(!DS.drag){
+    // Check for click-to-info on grid unit
+    const gp2=w2g(pos.x,pos.y);
+    if(gp2&&S.grid[gp2.row][gp2.col]&&S.phase==='prep'){showUnitInfo(S.grid[gp2.row][gp2.col]);}
+    return;
+  }
   const u=DS.unit,gp=w2g(pos.x,pos.y);
+  // If barely moved, show unit info
+  if(Math.hypot(pos.x-DS.mx,pos.y-DS.my)<5&&S.phase==='prep'&&u){
+    const origPos=DS.src==='grid'?{row:DS.sr,col:DS.sc}:null;
+    // Return unit to original position
+    if(DS.src==='grid'){S.grid[DS.sr][DS.sc]=u;u.gridRow=DS.sr;u.gridCol=DS.sc;}
+    DS.drag=false;DS.unit=null;DS.src=null;DS.hover=null;
+    showUnitInfo(u);updateUI();return;
+  }
   if(gp){
     const t=S.grid[gp.row][gp.col];
     if(t&&t.id!==u.id){
@@ -1694,6 +1715,7 @@ document.getElementById('btn-sell').addEventListener('click',()=>{
 });
 document.getElementById('btn-save').addEventListener('click',()=>{saveGame();toast('💾 Saved!');});
 document.getElementById('btn-mute-small').addEventListener('click',()=>{muted=!muted;document.getElementById('btn-mute-small').textContent=muted?'🔇':'🔊';if(muted)stopAmbient();else startAmbient();});
+document.getElementById('btn-help').addEventListener('click',showTutorial);
 document.getElementById('btn-restart').addEventListener('click',()=>{restartGame();});
 document.getElementById('btn-speed').addEventListener('click',()=>{
   const sp=[1,2,4],lb=['⏩ 1x','⏩ 2x','⏩ 4x'];
@@ -1731,6 +1753,14 @@ function updateUI(){
   document.getElementById('gold-display').textContent=S.gold;
   document.getElementById('base-hp-display').textContent=S.baseHp+'/'+S.baseMaxHp;
   document.getElementById('bench-count').textContent=S.bench.length;
+  // Wave preview
+  if(S.phase==='prep'){
+    const {config}=genWave(S.wave);const elms=[...new Set(config.enemies.map(g=>g.element))];
+    const icons={water:'💧',fire:'🔥',stone:'🪨',air:'💨'};
+    const types=elms.map(e=>icons[e]+' '+EL[e].name).join('  ');
+    const bossTxt=config.isBossWave?' 👑 BOSS!':'';
+    document.getElementById('wave-preview-text').innerHTML='📡 Next wave: '+types+bossTxt+' • ~'+config.enemies.reduce((s,g)=>s+g.cnt,0)+' enemies';
+  }else{document.getElementById('wave-preview-text').textContent='';}
   document.getElementById('potion-count').textContent=S.potions||0;
   document.getElementById('deathray-count').textContent=S.deathRays||0;
   document.getElementById('ultraray-count').textContent=S.ultraRays||0;
@@ -2051,6 +2081,39 @@ function showThemePicker(){
 function setTheme(id){
   S.theme=id;localStorage.setItem('elem_theme',id);
   hideOverlay();
+}
+
+// ─── TUTORIAL ───────────────────────────────────────────────
+function showTutorial(){
+  document.getElementById('overlay-container').innerHTML=`
+    <div class="overlay"><div class="overlay-box" style="max-width:480px;text-align:left;font-size:12px;line-height:1.7;">
+      <h2 style="text-align:center;">❓ How to Play</h2>
+      <p><b>1. Buy units</b> — Click 💧🔥🪨💨 in the shop (50g each). They go to your bench.</p>
+      <p><b>2. Place on grid</b> — Drag from bench to the 4×5 grid.</p>
+      <p><b>3. Merge!</b> — Drag identical units onto each other to evolve them (T1→T2→...→T10). Cross-element merges create hybrids.</p>
+      <p><b>4. Fight!</b> — Press ⚔️ Fight to battle the enemy wave. Your units auto-attack.</p>
+      <p><b>Counters:</b> 💧Water>🔥Fire  🔥Fire>💨Air  🪨Stone>💧Water  💨Air>🪨Stone (2× damage!)</p>
+      <p><b>Special abilities</b> charge during combat — watch the bar under each unit.</p>
+      <p><b>Bosses</b> every 10 waves. 💀 Death Rays (200g) kill enemies instantly.</p>
+      <p style="text-align:center;color:var(--text-dim);">💰 Win=50g | Lose=25g | 🧪 Potions heal 50% | G=debug code</p>
+      <button class="primary" onclick="hideOverlay()" style="margin-top:8px;">Got it!</button>
+    </div></div>`;
+}
+
+function showUnitInfo(u){
+  const ab=EL[u.element]?.ability;
+  const counters=getUnitCounters(u);
+  document.getElementById('overlay-container').innerHTML=`
+    <div class="overlay" onclick="hideOverlay()"><div class="overlay-box" style="max-width:300px;text-align:left;font-size:12px;line-height:1.6;">
+      <div style="font-size:24px;text-align:center;">${uEmoji(u)} ${u.name} ${'★'.repeat(Math.min(u.tier+1,4))+(u.tier>=4?' T'+(u.tier+1):'')}</div>
+      <p>❤️ HP: <b>${u.hp}/${u.maxHp}</b> | ⚔️ ATK: <b>${u.atk}</b> | ⏱️ Speed: <b>${u.speed}s</b></p>
+      <p>🛡️ Element: <b>${u.elements.map(e=>EL[e].name).join(' + ')}</b> ${u.isHybrid?'(Hybrid)':''}</p>
+      <p>🎯 Counters: <b>${counters.map(c=>EL[c]?.name||c).join(', ')}</b> (2× damage)</p>
+      ${ab?`<p>✨ Special: <b>${ab.icon} ${ab.name}</b> — ${ab.desc} (CD: ${(ab.cd*Math.max(0.35,1-u.tier*0.07)).toFixed(1)}s)</p>`:''}
+      <p>⭐ XP: ${u.xp} | Tier ${u.tier+1}/10</p>
+      ${u.shielded?'<p>🛡️ Shielded — next hit blocked!</p>':''}
+      <p style="text-align:center;color:var(--text-dim);font-size:10px;">Click anywhere to close</p>
+    </div></div>`;
 }
 
 // ─── INIT ────────────────────────────────────────────────────
