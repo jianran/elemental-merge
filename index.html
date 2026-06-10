@@ -156,6 +156,7 @@ canvas{display:block;width:100%;height:100%;}
     <button id="btn-fight">⚔️ Fight!</button>
     <button id="btn-speed" title="Toggle combat speed">⏩ 1x</button>
     <button id="btn-mute-small" title="Mute">🔊</button>
+    <span id="online-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;">📡</span>
     <button id="btn-help" title="How to play">❓</button>
     <button id="btn-restart" title="Restart game">🔄</button>
     <button id="btn-profile" title="Switch account" style="font-size:13px;">👤</button>
@@ -2150,7 +2151,24 @@ document.getElementById('btn-leaderboard').addEventListener('click',()=>{
 });
 
 init();
-console.log('🌊🔥🪨💨 Elemental Merge ready! Multiple accounts supported via localStorage.');
+// ─── OFFLINE DETECTION ──────────────────────────────────────
+function updateOnlineStatus(){
+  if(!navigator.onLine){
+    document.getElementById('online-indicator').textContent='📡 Offline';
+    document.getElementById('online-indicator').style.color='#ff6644';
+  }else{
+    document.getElementById('online-indicator').textContent='📡 Online';
+    document.getElementById('online-indicator').style.color='#44cc44';
+  }
+}
+window.addEventListener('online',updateOnlineStatus);
+window.addEventListener('offline',updateOnlineStatus);
+updateOnlineStatus();
+// Note: This game is a single HTML file — no external deps.
+// Once loaded, it works fully offline via browser cache.
+// Save to your device and open the file directly for guaranteed offline play.
+
+console.log('🌊🔥🪨💨 Elemental Merge ready! No WiFi needed — fully offline capable.');
 </script>
 </body>
 </html>
